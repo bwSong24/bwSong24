@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>中英文句子练习</title>
+  <script src="https://cdn.bootcdn.net/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; }
+    #chinese, #english { font-size: 1.5em; margin: 20px 0; }
+    #english { color: #007bff; }
+    button { margin-right: 10px; }
+  </style>
+</head>
+<body>
+  <h1>中英文句子练习</h1>
+  <input type="file" id="fileInput" accept=".csv">
+  <div id="chinese"></div>
+  <div id="english" style="display:none;"></div>
+  <button id="nextBtn" disabled>随机中文句子</button>
+  <button id="showAnswerBtn" disabled>显示英文答案</button>
+
+  <script>
+    let sentences = [];
+    let currentIndex = -1;
+
+    document.getElementById('fileInput').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      Papa.parse(file, {
+        header: true,
+        complete: function(results) {
+          sentences = results.data.filter(row => row['中文'] && row['英文']);
+          document.getElementById('nextBtn').disabled = false;
+          document.getElementById('showAnswerBtn').disabled = false;
+          showRandomSentence();
+        }
+      });
+    });
+
+    document.getElementById('nextBtn').onclick = showRandomSentence;
+    document.getElementById('showAnswerBtn').onclick = function() {
+      if (currentIndex >= 0) {
+        document.getElementById('english').style.display = 'block';
+      }
+    };
+
+    function showRandomSentence() {
+      if (sentences.length === 0) return;
+      currentIndex = Math.floor(Math.random() * sentences.length);
+      document.getElementById('chinese').textContent = sentences[currentIndex]['中文'];
+      document.getElementById('english').textContent = sentences[currentIndex]['英文'];
+      document.getElementById('english').style.display = 'none';
+    }
+  </script>
+</body>
+</html>
