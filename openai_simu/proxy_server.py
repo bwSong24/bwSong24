@@ -25,6 +25,7 @@ class ChatCompletionRequest(BaseModel):
     top_p: Optional[float] = None
     n: Optional[int] = None
     max_tokens: Optional[int] = None
+    enable_thinking: bool = False
 
 async def proxy_stream(url: str, headers: Dict[str, str], json_data: Dict[str, Any]):
     print ("url:", url)
@@ -46,7 +47,8 @@ async def proxy_stream(url: str, headers: Dict[str, str], json_data: Dict[str, A
 async def chat_completions(request: ChatCompletionRequest, authorization: Optional[str] = Header(None)):
     # 验证 Authorization 头
     if not authorization:
-        raise HTTPException(status_code=401, detail="Missing Authorization header")
+        print ("API key is empty.")
+        #raise HTTPException(status_code=401, detail="Missing Authorization header")
     
     # 准备转发到 OpenAI 的请求
     headers = {
