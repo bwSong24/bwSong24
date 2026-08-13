@@ -1,0 +1,5 @@
+.DS_Store
+.idea/
+*.pyc
+__pycache__/
+code_heal_eng/Backend/data/
