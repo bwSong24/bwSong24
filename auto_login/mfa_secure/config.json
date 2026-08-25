@@ -1,0 +1,46 @@
+{
+  "jump": {
+    "user": "18515208389",
+    "host": "172.18.254.73",
+    "port": "2222",
+    "password": "Songbowei0801",
+    "mfa_secret": "OWYQW3ATK7T5HPDW"
+  },
+  "servers": {
+    "10.100.34.34": {
+      "user": "songbowei",
+      "password": "fz4!yO$KmMsn@h62ki*FXYD!UwMNO@Ja"
+    },
+    "10.189.1.129": {
+      "user": "bwsong",
+      "password": "321songbowei"
+    },
+    "10.100.34.42": {
+      "user": "huangmingming",
+      "password": "lsui38%UIh3s"
+    },
+    "10.200.30.16": {
+      "user": "yanfa",
+      "password": "TnW0BTxQq4TsFV"
+    },
+    "10.8.81.1": {
+      "user": 2
+    },
+    "10.8.81.3": {
+      "user": 2
+    },
+    "10.7.52.83": {
+      "user": 2
+    },
+    "10.100.34.41": {
+      "host": "10.100.34.42",
+      "user": "huangmingming",
+      "password": "lsui38%UIh3s",
+      "next": {
+        "host": "10.100.34.41",
+        "user": "wangtiezheng",
+        "password": "lsui38%UIh3s"
+      }
+    }
+  }
+}

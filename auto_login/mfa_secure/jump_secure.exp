@@ -1,0 +1,290 @@
+#!/usr/bin/expect -f 
+set timeout 60
+
+
+# ===== 参数 =====
+if {[llength $argv] != 1} {
+    send_user "用法: jump_secure.exp target_host\n"
+    exit 1
+}
+
+set target_host [lindex $argv 0]
+send_user "$target_host\n"
+
+# ===== 读取 JSON =====
+set config_file "$env(HOME)/auto_login/mfa_secure/config.json"
+
+set value [exec python3 -c "
+import json
+data=json.load(open('$config_file'))
+print(data)
+"]
+#send_user "\nDEBUG: config=$value\n"
+
+set key "servers-$target_host-user"
+set value [exec python3 -c "
+data='$key'.split('-')
+print (data)
+"]
+send_user "\nDEBUG: value=$value\n"
+
+# 用 python 解析（简单稳定）
+proc get_json {key} {
+    global config_file
+    set value [exec python3 -c "
+import json
+data=json.load(open('$config_file'))
+v=data
+for k in '$key'.split('-'):
+    v=v\[k\]
+print(v)
+"]
+    return $value
+}
+
+# ===== 读取跳板机 =====
+set jump_user [get_json "jump-user"]
+send_user "jump_user:$jump_user\n"
+set jump_host [get_json "jump-host"]
+send_user "jump_host$jump_host\n"
+set jump_port [get_json "jump-port"]
+send_user "jump_port$jump_port\n"
+set jump_pass [get_json "jump-password"]
+#send_user "jump_pass$jump_pass\n"
+
+
+# ===== MFA secret（Base32） =====
+set mfa_secret [get_json "jump-mfa_secret"]
+#send_user "mfa_secret:$mfa_secret\n"
+
+# ===== 读取目标机 =====
+set target_user [get_json "servers-$target_host-user"]
+send_user "target_user:$target_user\n"
+
+# password 是可选字段
+set target_pass ""
+catch {
+    set target_pass [get_json "servers-$target_host-password"]
+}
+
+
+## ===== 读取目标机 =====
+#set has_next [get_json "servers-$target_host-has_next"]
+#send_user "$has_next\n"
+#
+# ===== 判断是否有第二跳 =====
+set has_next 0
+catch {
+    set next_host [get_json "servers-$target_host-next-host"]
+    send_user "next_host:$next_host\n"
+    set next_user [get_json "servers-$target_host-next-user"]
+    send_user "next_user:$next_user\n"
+    set next_pass [get_json "servers-$target_host-next-password"]
+    send_user "next_pass:$next_pass\n"
+    ## need update target host
+    set target_host [get_json "servers-$target_host-host"]
+    send_user "target_host:$target_host\n"
+    set has_next 1
+    send_user "has_next:$has_next\n"
+}
+
+
+#exp_internal 1
+# ===== 启动 SSH =====
+send_user "\nINFO Connecting JumpServer...\n"
+#send_user "\ntarget_host:$target_host\ntarget_user:$target_user\ntarget_pass:$target_pass\n next_host:$next_host\nnext_user:$next_user\nnext_pass:$next_pass\n"
+spawn ssh -tt -p $jump_port $jump_user@$jump_host
+#sleep 1
+
+# ===== JumpServer 密码 =====
+expect {
+     "*password:" {
+        send "$jump_pass\r"
+    }
+    timeout {
+        send_user "\nERROR 未出现 JumpServer 密码提示\n"
+        exit 1
+    }
+}
+
+#spawn ssh -p $jump_port $jump_user@$jump_host
+#
+#
+#expect "*password:"
+#send "$jump_pass\r"
+
+#expect "*OTP Code*"
+
+#send_user "\n请现在手动输入手机上的 MFA 验证码：\n"
+#
+#interact {
+#    \r {
+#        send "\r"
+#        return
+#    }
+#}
+# ===== MFA 阶段 =====
+expect {
+    "*OTP Code*" {
+
+        # 👉 调用 oathtool 生成验证码
+        set otp [exec oathtool --totp -b $mfa_secret]
+        after 1000
+
+        send_user "\n自动生成OTP: $otp\n"
+        send "$otp\r"
+
+       #exp_continue
+    }
+}
+
+#expect "Opt>|*Host*"
+#send "$target_host\r"
+#
+#expect "username:"
+#send "$target_user\r"
+#
+#expect "*password:"
+#send "$target_pass\r"
+
+
+# ===== 第一阶段：输入目标机器 IP =====
+expect {
+    "Opt>" {
+        send_user "\nINFO 在 Opt> 输入目标地址: $target_host\n"
+        send -- "$target_host\r"
+    }
+
+    -exact {[Host]>} {
+        send_user "\nINFO 在 \[Host\]> 输入目标地址: $target_host\n"
+        send -- "$target_host\r"
+    }
+
+    timeout {
+        send_user "\nERROR 没有匹配到 Opt> 或 \[Host\]>\n"
+        exit 1
+    }
+
+    eof {
+        send_user "\nERROR JumpServer 连接已经关闭\n"
+        exit 1
+    }
+}
+
+# ===== 第二阶段：兼容用户名密码、账号 ID、资产 ID =====
+expect {
+    # 普通用户名密码方式
+    "username:" {
+        send_user "\nINFO 输入用户名: $target_user\n"
+        send -- "$target_user\r"
+
+        expect {
+            "*password:" {
+                if {$target_pass eq ""} {
+                    send_user "\nERROR 需要输入密码，但配置文件中没有 password\n"
+                    exit 1
+                }
+
+                send -- "$target_pass\r"
+            }
+
+            timeout {
+                send_user "\nERROR 输入用户名后，没有出现 password 提示\n"
+                exit 1
+            }
+        }
+    }
+
+    # Opt> 输入 IP 后，出现账号 ID>
+    -exact "ID>" {
+        send_user "\nINFO 选择账号 ID: $target_user\n"
+        send -- "$target_user\r"
+    }
+
+    # 第一次 [Host]> 已经在上面输入了 IP
+    # 这里再次出现 [Host]>，表示需要选择资产 ID
+    -exact {[Host]>} {
+        send_user "\nINFO 选择资产 ID: $target_user\n"
+        send -- "$target_user\r"
+    }
+
+    timeout {
+        send_user "\nERROR 没有匹配到 username:、ID> 或 \[Host\]>\n"
+        exit 1
+    }
+
+    eof {
+        send_user "\nERROR 第一跳过程中连接已经关闭\n"
+        exit 1
+    }
+}
+
+
+#expect {
+#    "Opt>" {
+#    send "$target_host\r"
+#    }    
+#    
+#    
+#   # "*Host*" {
+#   # send "$target_host\r"
+#   # }
+#
+#   # 
+#   # "*Host*" {
+#   # send "$target_host\r"
+#   # }   
+#
+# 
+#   # "ID>" {
+#   # send "$target_host\r"
+#   # }    
+#
+#    "username:" {
+#    send "$target_user\r"
+#    }    
+#
+#    "*password:" {
+#    send "$target_pass\r"
+#    }    
+#}
+
+# ===== 登录 target_host 后 =====
+send_user "\nINFO 已进入第一台机器\n"
+
+# ===== 如果有第二跳 =====
+if {$has_next == 1} {
+
+    send_user "\nINFO 准备跳转第二台机器: $next_host\n"
+   expect "login"
+    # 发起 ssh
+    send "ssh $next_user@$next_host\r"
+
+    expect {
+
+        # 第一次连接确认
+        "yes/no" {
+            send "yes\r"
+            exp_continue
+        }
+
+        # 密码
+        "*password:" {
+            send "$next_pass\r"
+        }
+
+            -re {.*@.*[$#] $} {
+        send_user "\nINFO 第二跳登录成功, no pass 🚀\n"
+    }
+
+        timeout {
+            send_user "\nERROR 第二跳连接失败（未出现 password）\n"
+            exit 1
+        }
+    }
+
+    send_user "\nINFO 第二跳登录成功 🚀\n"
+}
+
+
+interact
